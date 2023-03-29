@@ -1,7 +1,11 @@
 package libs
 
 import (
+	"encoding/json"
+	"fmt"
 	"gptdnd-server/internal/models"
+
+	"github.com/sashabaranov/go-openai"
 )
 
 type RoomManager struct {
@@ -31,4 +35,21 @@ func (rm *RoomManager) RemovePlayerFromRoom(roomID string, player *models.Player
 		}
 	}
 	rm.Rooms[roomID] = players
+}
+
+func (rm *RoomManager) PushMessageToRoom(roomID string, message openai.ChatCompletionMessage) {
+	players, ok := rm.Rooms[roomID]
+	if (!ok) {
+		return
+	}
+
+	jsonData, err := json.Marshal(message)
+	if err != nil {
+		fmt.Println("Error marshalling message:", err)
+		return
+	}
+
+	for _, p := range players {
+		p.Conn.WriteMessage(1, []byte(jsonData))
+	}
 }
