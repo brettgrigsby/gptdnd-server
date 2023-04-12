@@ -1,6 +1,8 @@
 package models
 
 import (
+	"gptdnd-server/internal/utils"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -26,9 +28,19 @@ const (
 )
 
 type Player struct {
-	ID	  string
-	Name  string
-	Class PlayerClass
-	Race  PlayerRace
-	Conn  *websocket.Conn
+	ID	  string `json:"id"`
+	Name  string `json:"name"`
+	Class PlayerClass `json:"class"`
+	Race  PlayerRace `json:"race"`
+	Conn  *websocket.Conn `json:"-"`
+}
+
+func CreatePlayer(name string, class PlayerClass, race PlayerRace, conn *websocket.Conn) *Player {
+	return &Player{
+		ID: utils.CreateUUID(),
+		Name: name,
+		Class: class,
+		Race: race,
+		Conn: conn,
+	}
 }
