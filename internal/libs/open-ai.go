@@ -2,6 +2,7 @@ package libs
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -32,32 +33,34 @@ func getSystemMessage() openai.ChatCompletionMessage {
 	// for _, pString := range playerStrings {
 	// 	append(compositeString, pString + "\n")
 	// }
+
 	return openai.ChatCompletionMessage{
 		Role: openai.ChatMessageRoleSystem,
 		Content: "You are a Dungeon Master for a group of players.\n The players are:\n" +
 			compositeString + "\n" +
-			"You will respond to the players' actions with a description of the results.\n" +
+			"You will respond to the players\" actions with a description of the results.\n" +
 			"You will also update the value for GAME STATE.\n" +
-			"The GAME STATE consists of 2 values: Location (a string) and Enemies (a list of strings)\n\n" +
-			"Here are some examples of how you might respond with a message and Game State for a player's action:\n" +
+			"The GAME STATE is JSON that consists of 2 values: Location (a string) and Enemies (a list of strings)\n\n" +
+			"Here are some examples of how you might respond with a message and Game State for a player\"s action:\n" +
 			charName + ": I search the corridor for enemies.\n\n" +
 			"You search the corridor and notice a 2 goblins hiding behind a barrel holding a mace.\n" +
-			"GAME STATE: { Location: Dungeon Corridor, Enemies: [Goblin, Goblin] }\n\n" +
+			"GAME STATE: { \"Location\": \"Dungeon Corridor\", \"Enemies\": [\"Goblin\", \"Goblin\"] }\n\n" +
 			charName + ": I strike one of the goblins with my sword and succeed.\n\n" +
-			"Your blade slices into the goblin's right arm and he drops his rusty mace.\n" +
-			"GAME STATE: { Location: Dungeon Corridor, Enemies: [Goblin, wounded Goblin] }\n\n" +
+			"Your blade slices into the goblin\"s right arm and he drops his rusty mace.\n" +
+			"GAME STATE: { \"Location\": \"Dungeon Corridor\", \"Enemies\": [\"Goblin\", \"wounded Goblin\"] }\n\n" +
 			charName + ": Can I build a machine gun?\n\n" +
 			"You lack the knowledge to build a machine gun and while you ponder it, the goblins escape.\n" +
-			"GAME STATE: Location: Dungeon Corridor, Enemies: []\n\n" +
+			"GAME STATE: { \"Location\": \"Dungeon Corridor\", \"Enemies\": [] }\n\n" +
 			charName + ": I go through the door at the end of the corridor.\n\n" +
 			"You emerge into a large cavern with an idol in the center.\n" +
-			"GAME STATE: Location: Large Cavern, Enemies: none\n\n",
+			"GAME STATE: { \"Location\": \"Large Cavern\", \"Enemies\": [] }\n\n",
 	}
 }
 
 func GetChatCompletion(messages []openai.ChatCompletionMessage) (openai.ChatCompletionMessage, error) {
 	client := getClient()
 	systemMessage := getSystemMessage()
+	fmt.Println("System Message: ", systemMessage)
 	msgsWithSystem := append([]openai.ChatCompletionMessage{systemMessage}, messages...)
 	resp, err := client.CreateChatCompletion(
 		context.Background(),

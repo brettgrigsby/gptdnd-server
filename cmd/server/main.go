@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"gptdnd-server/internal/libs"
 	"gptdnd-server/internal/utils"
 	"log"
 	"net/http"
@@ -21,7 +22,7 @@ type Room struct {
 }
 
 type Player struct {
-	ID   int `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 	Conn *websocket.Conn `json:"-"`
 }
@@ -34,18 +35,23 @@ type WSMessage struct {
 var rooms = make(map[string]*Room)
 var roomsLock sync.Mutex
 
-var upgrader = websocket.Upgrader{}
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/rooms/{room_id}/messages", getRoomMessages).Methods("GET")
 	router.HandleFunc("/rooms/{room_id}", getRoomData).Methods("GET")
 	router.HandleFunc("/rooms/{room_id}/join", joinRoom).Methods("POST")
+	router.HandleFunc("/rooms/{room_id}/players/{player_id}/ws", connectToRoom).Methods("GET")
 	router.HandleFunc("/rooms/create", createRoom).Methods("POST")
 
 	corsOptions := handlers.CORS(
 		handlers.AllowedHeaders([]string{"Content-Type", "Accept"}),
-		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS", "UPGRADE", "WEBSOCKET"}),
 		handlers.AllowedOrigins([]string{"http://localhost:3000"}),
 	)
 	fmt.Println("Server is running on port 8080")
@@ -89,6 +95,47 @@ func getRoomData(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(room)
 }
 
+func connectToRoom(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, ok := vars["room_id"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	playerID, ok := vars["player_id"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	room, ok := rooms[roomID]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	var player *Player
+	for _, p := range room.Players {
+		if p.ID == playerID {
+			player = p
+			break
+		}
+	}
+	if player == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Upgrade error:", err)
+		return
+	}
+
+	player.Conn = conn
+	go handlePlayer(room, player)
+}
+
 func joinRoom(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, ok := vars["room_id"]
@@ -109,24 +156,24 @@ func joinRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	err := json.NewDecoder(r.Body).Decode(&requestBody)
 	if err != nil {
+		fmt.Println("Error parsing request body:", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade error:", err)
-		return
-	}
+	// conn, err := upgrader.Upgrade(w, r, nil)
+	// if err != nil {
+	// 	log.Println("Upgrade error:", err)
+	// 	return
+	// }
 
 	player := &Player{
-		ID:   len(room.Players),
-		Conn: conn,
+		ID:   utils.CreateUUID(),
 		Name: requestBody.Name,
 	}
-
 	room.Players = append(room.Players, player)
-	go handlePlayer(room, player)
+	json.NewEncoder(w).Encode(player)
+	// go handlePlayer(room, player)
 }
 
 func handlePlayer(room *Room, player *Player) {
@@ -140,14 +187,24 @@ func handlePlayer(room *Room, player *Player) {
 			break
 		}
 
-		log.Println("message from player: ", message)
+		// log message as string
+		log.Println("message from player: ", string(message))
 
-		// msg := openai.ChatCompletionMessage{
-		// 	Content: string(message),
-		// 	Role: "user",
-		// }
+		msg := openai.ChatCompletionMessage{
+			Content: player.Name + ": " + string(message),
+			Role: openai.ChatMessageRoleUser,
+		}
 
-		// sendMessageToRoom(room, msg)
+		sendMessageToRoom(room, msg)
+
+		// send message to openai
+		responseMsg, err := libs.GetChatCompletion(room.Messages)
+		if err != nil {
+			log.Println("Error getting chat completion:", err)
+			return
+		}
+
+		sendMessageToRoom(room, responseMsg)
 	}
 }
 
@@ -156,8 +213,15 @@ func sendMessageToRoom(room *Room, message openai.ChatCompletionMessage) {
 	room.Messages = append(room.Messages, message)
 	roomsLock.Unlock()
 
+	// marshal message to json
+	jsonMessage, err := json.Marshal(message)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
 	for _, player := range room.Players {
-		err := player.Conn.WriteMessage(websocket.TextMessage, []byte(message.Content))
+		err := player.Conn.WriteMessage(websocket.TextMessage, []byte(jsonMessage))
 		if err != nil {
 			log.Println("Write error:", err)
 		}
