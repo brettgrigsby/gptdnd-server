@@ -2,7 +2,6 @@ package libs
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -60,7 +59,6 @@ func getSystemMessage() openai.ChatCompletionMessage {
 func GetChatCompletion(messages []openai.ChatCompletionMessage) (openai.ChatCompletionMessage, error) {
 	client := getClient()
 	systemMessage := getSystemMessage()
-	fmt.Println("System Message: ", systemMessage)
 	msgsWithSystem := append([]openai.ChatCompletionMessage{systemMessage}, messages...)
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
